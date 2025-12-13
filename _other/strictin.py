@@ -1,35 +1,34 @@
+"""
+厳密入力パーサー
+競技プログラミングの入力を想定
+
+- read_space(): 1文字以上の SPACE/TAB を要求して消費
+- read_eoln():
+    行末改行を要求して消費
+- read_eof():
+    EOF を要求
+- read_token(name="token"):
+    現在行から1トークンを空白か改行が来るまで読む
+- read_int(name="int", lo=None, hi=None):
+    1トークンを10進整数として読む（負数/範囲チェック可）
+- read_string(name="s", min_len=None, max_len=None):
+    1トークンを文字列として読む（長さチェック可）
+
+使用例:
+ins = StrictIn.from_stdin_ascii()
+N = ins.read_int("N", lo=1, hi=200000, allow_sign=False)
+ins.read_eoln()
+s = ins.read_string("S", min_len=1, max_len=N)
+ins.read_eoln()
+ins.read_eof()
+"""
+
 import sys
-import re
 
 class InputError(Exception):
     pass
 
 class StrictIn:
-
-    """
-    厳密入力パーサー
-    競技プログラミングの入力を想定
-    
-    - read_space(): 1文字以上の SPACE/TAB を要求して消費
-    - read_eoln():
-        行末改行を要求して消費
-    - read_eof():
-        EOF を要求
-    - read_token(name="token"):
-        現在行から1トークンを空白か改行が来るまで読む
-    - read_int(name="int", lo=None, hi=None):
-        1トークンを10進整数として読む（負数/範囲チェック可）
-    - read_string(name="s", min_len=None, max_len=None):
-        1トークンを文字列として読む（長さチェック可）
-
-    使用例:
-    ins = StrictIn.from_stdin_ascii()
-    N = ins.read_int("N", lo=1, hi=200000, allow_sign=False)
-    ins.read_eoln()
-    s = ins.read_string("S", min_len=1, max_len=N)
-    ins.read_eoln()
-    ins.read_eof()
-    """
 
     def __init__(self, s: bytes, i: int = 0, line: int = 1, col: int = 1):
         self.s = s
