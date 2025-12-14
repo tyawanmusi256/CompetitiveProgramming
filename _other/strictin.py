@@ -2,23 +2,29 @@
 厳密入力パーサー
 競技プログラミングの入力を想定
 
-- read_space(): 1文字以上の SPACE/TAB を要求して消費
+- read_space():
+    1文字以上の SPACE/TAB を要求して消費
 - read_eoln():
     行末改行を要求して消費
 - read_eof():
     EOF を要求
-- read_token(name="token"):
-    現在行から1トークンを空白か改行が来るまで読む
-- read_int(name="int", lo=None, hi=None):
-    1トークンを10進整数として読む（負数/範囲チェック可）
-- read_string(name="s", min_len=None, max_len=None):
-    1トークンを文字列として読む（長さチェック可）
+- read_int(lo=None, hi=None):
+    1トークンを10進整数として読む（負数可/範囲チェック有）
+- read_string(min_len=None, max_len=None):
+    1トークンを文字列として読む（長さチェック有）
 
 使用例:
 ins = StrictIn.from_stdin_ascii()
-N = ins.read_int("N", lo=1, hi=200000, allow_sign=False)
+N = ins.read_int(lo=1, hi=200000)
 ins.read_eoln()
-s = ins.read_string("S", min_len=1, max_len=N)
+S = ins.read_string(min_len=N, max_len=N)
+ins.read_eoln()
+A = []
+for i in range(N):
+    x = ins.read_int(lo=-200000, hi=200000)
+    A.append(x)
+    if i != N-1:
+        ins.read_space()
 ins.read_eoln()
 ins.read_eof()
 """
@@ -86,7 +92,7 @@ class StrictIn:
         self._err("expected EOL")
 
     def skip_spaces(self) -> None:
-        while (not self._eof()) and (self._peek() in (0x20, 0x09)):  # space/tab
+        while (not self._eof()) and (self._peek() in (0x20, 0x09)):
             self._advance()
 
     def skip_ws(self) -> None:
@@ -145,16 +151,13 @@ class StrictIn:
             self._err(f"int is not a base-10 integer")
 
         x = int(t_str)
-        if t[:1] == b"-":
-            x = -x
         if lo is not None and x < lo:
             self._err(f"int out of range: {x} < {lo}")
         if hi is not None and x > hi:
             self._err(f"int out of range: {x} > {hi}")
         return x
 
-    def read_string(self, min_len: int | None = None,
-                          max_len: int | None = None) -> str:
+    def read_string(self, min_len: int | None = None, max_len: int | None = None) -> str:
 
         s = self.read_token()
 
