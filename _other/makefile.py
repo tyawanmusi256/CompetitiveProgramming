@@ -2,7 +2,7 @@ import os
 import string
 
 # 作成先ディレクトリのパス（必要に応じて変更）
-target_dir = "DailyTraining/20251211all"
+target_dir = "DailyTraining/20260115all"
 testcase = 9
 
 # ディレクトリが存在しない場合は作成
