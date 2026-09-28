@@ -1,21 +1,39 @@
+# LazySegmentTree: 0-indexed、区間は半開区間 [l, r)
+# LazySegmentTree(n, p, x_unit, m_unit, f, g, h, power_of_two=False)
+# p は長さ n のリスト。構築 O(n)、各操作 O(log n)（f/g/h が O(1) の場合）。
+# f(a, b): 左右の集約。結合律を満たし、x_unit は単位元。
+# g(a, x): 集約値 a に操作 x を適用。区間長が必要なら a に持たせる。
+# h(old, new): old の後に new を適用する合成。m_unit は恒等操作。
+# f/g/h は引数を変更しないこと。遅延値は m_unit と == で比較できること。
+# update(l, r, x): [l, r) に x を適用。空区間は何もしない。
+# query(l, r): [l, r) の集約。空区間は x_unit。get(i): a[i]。
+# max_right(l, check) / min_left(r, check): 条件を満たす最大の右端 / 最小の左端。
+# 境界探索には power_of_two=True を指定。
+# check は副作用なし・区間拡大に対して単調、check(x_unit) は真。
+# 0 <= l <= r <= n。max_right(n, check) = n、min_left(0, check) = 0。
+
+# 使用例（区間加算・区間和、値は (和, 長さ)）:
+# f = lambda a, b: (a[0] + b[0], a[1] + b[1])
+# g = lambda a, x: (a[0] + x * a[1], a[1])
+# h = lambda old, new: old + new
+# seg = LazySegmentTree(3, [(1, 1), (2, 1), (3, 1)], (0, 0), 0, f, g, h, True) # [1, 2, 3]
+# seg.update(0, 2, 4)                               # [5, 6, 3]
+# print(seg.query(1, 3)[0])                         # 9
+# print(seg.max_right(0, lambda a: a[0] <= 11))     # 2
+# print(seg.min_left(3, lambda a: a[0] <= 9))       # 1
+
+# 区間アフィン変換・区間和クエリ N, Q <= 2e5
+# 提出: https://judge.yosupo.jp/submission/406683 / AC / PyPy3 / 1263 ms
+
+
 class LazySegmentTree:
-
-    # f(X, X) -> X
-    # g(X, M) -> X
-    # h(M, M) -> M
-
-    # max_right / min_left を使いたいなら N を 2冪 に切り上げて渡すこと
-
     __slots__ = ["n0", "n", "seg", "x_unit", "m_unit", "f", "g", "h", "lazy"]
 
     def __init__(self, n, p, x_unit, m_unit, f, g, h, power_of_two=False):
+        assert n >= 0 and len(p) == n
         self.n0 = n
-        if power_of_two:
-            self.n = 1 << (n - 1).bit_length()
-            self.seg = (p + [x_unit] * (self.n - n)) * 2
-        else:
-            self.n = n
-            self.seg = p * 2
+        self.n = 1 << (max(1, n) - 1).bit_length() if power_of_two else max(1, n)
+        self.seg = [x_unit] * self.n + p.copy() + [x_unit] * (self.n - n)
         self.x_unit = x_unit
         self.m_unit = m_unit
         self.f = f
@@ -26,106 +44,157 @@ class LazySegmentTree:
         self.lazy = [m_unit] * (self.n * 2)
 
     def update(self, l, r, x):
+        seg = self.seg
+        lazy = self.lazy
+        f = self.f
+        g = self.g
+        h = self.h
+        m_unit = self.m_unit
+        assert 0 <= l <= r <= self.n0
+        if l == r or x == m_unit:
+            return
         l += self.n
         r += self.n
         ll = l // (l & -l)
         rr = r // (r & -r) - 1
         for shift in range(ll.bit_length() - 1, 0, -1):
             i = ll >> shift
-            self.lazy[i << 1] = self.h(self.lazy[i << 1], self.lazy[i])
-            self.lazy[(i << 1) + 1] = self.h(self.lazy[(i << 1) + 1], self.lazy[i])
-            self.seg[i] = self.g(self.seg[i], self.lazy[i])
-            self.lazy[i] = self.m_unit
+            if lazy[i] == m_unit:
+                continue
+            lazy[i << 1] = h(lazy[i << 1], lazy[i])
+            lazy[(i << 1) + 1] = h(lazy[(i << 1) + 1], lazy[i])
+            seg[i] = g(seg[i], lazy[i])
+            lazy[i] = m_unit
         for shift in range(rr.bit_length()-1, 0, -1):
             i = rr >> shift
-            self.lazy[i << 1] = self.h(self.lazy[i << 1], self.lazy[i])
-            self.lazy[(i << 1) + 1] = self.h(self.lazy[(i << 1) + 1], self.lazy[i])
-            self.seg[i] = self.g(self.seg[i], self.lazy[i])
-            self.lazy[i] = self.m_unit
+            if lazy[i] == m_unit:
+                continue
+            lazy[i << 1] = h(lazy[i << 1], lazy[i])
+            lazy[(i << 1) + 1] = h(lazy[(i << 1) + 1], lazy[i])
+            seg[i] = g(seg[i], lazy[i])
+            lazy[i] = m_unit
         while l < r:
             if l & 1:
-                self.lazy[l] = self.h(self.lazy[l], x)
+                lazy[l] = h(lazy[l], x)
                 l += 1
             if r & 1:
                 r -= 1
-                self.lazy[r] = self.h(self.lazy[r], x)
+                lazy[r] = h(lazy[r], x)
             l >>= 1
             r >>= 1
         while ll > 1:
             ll >>= 1
-            self.seg[ll] = self.f(self.g(self.seg[ll << 1], self.lazy[ll << 1]), self.g(self.seg[(ll << 1) + 1], self.lazy[(ll << 1) + 1]))
-            self.lazy[ll] = self.m_unit
+            left = ll << 1
+            right = left | 1
+            a = seg[left] if lazy[left] == m_unit else g(seg[left], lazy[left])
+            b = seg[right] if lazy[right] == m_unit else g(seg[right], lazy[right])
+            seg[ll] = f(a, b)
+            lazy[ll] = m_unit
         while rr > 1:
             rr >>= 1
-            self.seg[rr] = self.f(self.g(self.seg[rr << 1], self.lazy[rr << 1]), self.g(self.seg[(rr << 1) + 1], self.lazy[(rr << 1) + 1]))
-            self.lazy[rr] = self.m_unit
+            left = rr << 1
+            right = left | 1
+            a = seg[left] if lazy[left] == m_unit else g(seg[left], lazy[left])
+            b = seg[right] if lazy[right] == m_unit else g(seg[right], lazy[right])
+            seg[rr] = f(a, b)
+            lazy[rr] = m_unit
 
     def query(self, l, r):
+        seg = self.seg
+        lazy = self.lazy
+        f = self.f
+        g = self.g
+        h = self.h
+        m_unit = self.m_unit
+        assert 0 <= l <= r <= self.n0
+        if l == r:
+            return self.x_unit
         l += self.n
         r += self.n
         ll = l // (l & -l)
         rr = r // (r & -r) - 1
         for shift in range(ll.bit_length() - 1, 0, -1):
             i = ll >> shift
-            self.lazy[i << 1] = self.h(self.lazy[i << 1], self.lazy[i])
-            self.lazy[(i << 1) + 1] = self.h(self.lazy[(i << 1) + 1], self.lazy[i])
-            self.seg[i] = self.g(self.seg[i], self.lazy[i])
-            self.lazy[i] = self.m_unit
+            if lazy[i] == m_unit:
+                continue
+            lazy[i << 1] = h(lazy[i << 1], lazy[i])
+            lazy[(i << 1) + 1] = h(lazy[(i << 1) + 1], lazy[i])
+            seg[i] = g(seg[i], lazy[i])
+            lazy[i] = m_unit
         for shift in range(rr.bit_length() - 1, 0, -1):
             i = rr >> shift
-            self.lazy[i << 1] = self.h(self.lazy[i << 1], self.lazy[i])
-            self.lazy[(i << 1) + 1] = self.h(self.lazy[(i << 1) + 1], self.lazy[i])
-            self.seg[i] = self.g(self.seg[i], self.lazy[i])
-            self.lazy[i] = self.m_unit
+            if lazy[i] == m_unit:
+                continue
+            lazy[i << 1] = h(lazy[i << 1], lazy[i])
+            lazy[(i << 1) + 1] = h(lazy[(i << 1) + 1], lazy[i])
+            seg[i] = g(seg[i], lazy[i])
+            lazy[i] = m_unit
         ans_l = ans_r = self.x_unit
         while l < r:
             if l & 1:
-                ans_l = self.f(ans_l, self.g(self.seg[l], self.lazy[l]))
+                ans_l = f(ans_l, (seg[l] if lazy[l] == m_unit else g(seg[l], lazy[l])))
                 l += 1
             if r & 1:
                 r -= 1
-                ans_r = self.f(self.g(self.seg[r], self.lazy[r]), ans_r)
+                ans_r = f((seg[r] if lazy[r] == m_unit else g(seg[r], lazy[r])), ans_r)
             l >>= 1
             r >>= 1
-        return self.f(ans_l, ans_r)
+        return f(ans_l, ans_r)
 
     def get(self, i):
+        seg = self.seg
+        lazy = self.lazy
+        g = self.g
+        h = self.h
+        m_unit = self.m_unit
         assert 0 <= i < self.n0
         i += self.n
         for shift in range(i.bit_length() - 1, 0, -1):
             j = i >> shift
-            self.lazy[j << 1] = self.h(self.lazy[j << 1], self.lazy[j])
-            self.lazy[(j << 1) + 1] = self.h(self.lazy[(j << 1) + 1], self.lazy[j])
-            self.seg[j] = self.g(self.seg[j], self.lazy[j])
-            self.lazy[j] = self.m_unit
-        return self.g(self.seg[i], self.lazy[i])
+            if lazy[j] == m_unit:
+                continue
+            lazy[j << 1] = h(lazy[j << 1], lazy[j])
+            lazy[(j << 1) + 1] = h(lazy[(j << 1) + 1], lazy[j])
+            seg[j] = g(seg[j], lazy[j])
+            lazy[j] = m_unit
+        return (seg[i] if lazy[i] == m_unit else g(seg[i], lazy[i]))
 
     def max_right(self, l, check):
+        seg = self.seg
+        lazy = self.lazy
+        f = self.f
+        g = self.g
+        h = self.h
+        m_unit = self.m_unit
+        assert 0 <= l <= self.n0
+        assert check(self.x_unit)
         if l == self.n0:
             return self.n0
-        assert 0 <= l < self.n0
-        assert check(self.x_unit)
+        assert self.n & (self.n - 1) == 0, "use power_of_two=True"
         l += self.n
         ll = l // (l & -l)
         for shift in range(ll.bit_length() - 1, 0, -1):
             i = ll >> shift
-            self.lazy[i << 1] = self.h(self.lazy[i << 1], self.lazy[i])
-            self.lazy[(i << 1) + 1] = self.h(self.lazy[(i << 1) + 1], self.lazy[i])
-            self.seg[i] = self.g(self.seg[i], self.lazy[i])
-            self.lazy[i] = self.m_unit
+            if lazy[i] == m_unit:
+                continue
+            lazy[i << 1] = h(lazy[i << 1], lazy[i])
+            lazy[(i << 1) + 1] = h(lazy[(i << 1) + 1], lazy[i])
+            seg[i] = g(seg[i], lazy[i])
+            lazy[i] = m_unit
         ans = self.x_unit
         while True:
             while (l & 1) == 0:
                 l >>= 1
-            nxt = self.f(ans, self.g(self.seg[l], self.lazy[l]))
+            nxt = f(ans, (seg[l] if lazy[l] == m_unit else g(seg[l], lazy[l])))
             if not check(nxt):
                 while l < self.n:
-                    self.lazy[l << 1] = self.h(self.lazy[l << 1], self.lazy[l])
-                    self.lazy[(l << 1) + 1] = self.h(self.lazy[(l << 1) + 1], self.lazy[l])
-                    self.seg[l] = self.g(self.seg[l], self.lazy[l])
-                    self.lazy[l] = self.m_unit
+                    if lazy[l] != m_unit:
+                        lazy[l << 1] = h(lazy[l << 1], lazy[l])
+                        lazy[(l << 1) + 1] = h(lazy[(l << 1) + 1], lazy[l])
+                        seg[l] = g(seg[l], lazy[l])
+                        lazy[l] = m_unit
                     l <<= 1
-                    nxt = self.f(ans, self.g(self.seg[l], self.lazy[l]))
+                    nxt = f(ans, (seg[l] if lazy[l] == m_unit else g(seg[l], lazy[l])))
                     if check(nxt):
                         ans = nxt
                         l += 1
@@ -138,32 +207,42 @@ class LazySegmentTree:
         return self.n0
 
     def min_left(self, r, check):
+        seg = self.seg
+        lazy = self.lazy
+        f = self.f
+        g = self.g
+        h = self.h
+        m_unit = self.m_unit
+        assert 0 <= r <= self.n0
+        assert check(self.x_unit)
         if r == 0:
             return 0
-        assert 0 <= r < self.n0
-        assert check(self.x_unit)
+        assert self.n & (self.n - 1) == 0, "use power_of_two=True"
         r += self.n
         k = r - 1
         for shift in range(k.bit_length() - 1, 0, -1):
             i = k >> shift
-            self.lazy[i << 1] = self.h(self.lazy[i << 1], self.lazy[i])
-            self.lazy[(i << 1) + 1] = self.h(self.lazy[(i << 1) + 1], self.lazy[i])
-            self.seg[i] = self.g(self.seg[i], self.lazy[i])
-            self.lazy[i] = self.m_unit
+            if lazy[i] == m_unit:
+                continue
+            lazy[i << 1] = h(lazy[i << 1], lazy[i])
+            lazy[(i << 1) + 1] = h(lazy[(i << 1) + 1], lazy[i])
+            seg[i] = g(seg[i], lazy[i])
+            lazy[i] = m_unit
         ans = self.x_unit
         while True:
             r -= 1
             while r > 1 and (r & 1):
                 r >>= 1
-            nxt = self.f(self.g(self.seg[r], self.lazy[r]), ans)
+            nxt = f((seg[r] if lazy[r] == m_unit else g(seg[r], lazy[r])), ans)
             if not check(nxt):
                 while r < self.n:
-                    self.lazy[r << 1] = self.h(self.lazy[r << 1], self.lazy[r])
-                    self.lazy[(r << 1) + 1] = self.h(self.lazy[(r << 1) + 1], self.lazy[r])
-                    self.seg[r] = self.g(self.seg[r], self.lazy[r])
-                    self.lazy[r] = self.m_unit
+                    if lazy[r] != m_unit:
+                        lazy[r << 1] = h(lazy[r << 1], lazy[r])
+                        lazy[(r << 1) + 1] = h(lazy[(r << 1) + 1], lazy[r])
+                        seg[r] = g(seg[r], lazy[r])
+                        lazy[r] = m_unit
                     r = (r << 1) + 1
-                    nxt = self.f(self.g(self.seg[r], self.lazy[r]), ans)
+                    nxt = f((seg[r] if lazy[r] == m_unit else g(seg[r], lazy[r])), ans)
                     if check(nxt):
                         ans = nxt
                         r -= 1
@@ -175,48 +254,3 @@ class LazySegmentTree:
             if (r & -r) == r:
                 break
         return 0
-
-# Range Affine Range Sum
-# Update: a[i] <- b*a[i] + c for i in [l, r)
-# Query: output sum(a[i] for i in [l, r) ) mod 998244353
-
-import sys
-input = sys.stdin.readline
-
-mod = 998244353
-mask = (1 << 32) - 1
-
-def f(a, b):
-    m = a + b
-    return ((m >> 32) << 32) + ((m & mask) % mod)
-
-def g(a, x):
-    a1 = a >> 32
-    a2 = a & mask
-    b = x >> 32
-    c = x & mask
-    return (a1 << 32) + (a1 * c + a2 * b) % mod
-
-def h(x, y):
-    b1 = x >> 32
-    c1 = x & mask
-    b2 = y >> 32
-    c2 = y & mask
-    b = b1 * b2 % mod
-    c = (c1 * b2 + c2) % mod
-    return (b << 32) + c
-
-n, q = map(int, input().split())
-a = [(1 << 32) + i for i in map(int, input().split())]
-
-seg = LazySegmentTree(n, a, 0, (1 << 32), f, g, h)
-
-for _ in range(q):
-    query = list(map(int, input().split()))
-    if query[0] == 0:
-        l, r, b, c = query[1], query[2], query[3], query[4]
-        seg.update(l, r, (b << 32) + c)
-    else:
-        l, r = query[1], query[2]
-        print(seg.query(l, r) & mask)
-

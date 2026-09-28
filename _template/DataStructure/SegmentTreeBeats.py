@@ -1,18 +1,25 @@
+# SegmentTreeBeats: 0-indexed、区間は半開区間 [l, r)
+# SegmentTreeBeats(a): 初期リスト a から O(n) で構築。
+# update_add(l, r, x): [l, r) の各要素に x を加算
+# update_chmin(l, r, x): [l, r) の各要素を min(a[i], x) に更新
+# update_chmax(l, r, x): [l, r) の各要素を max(a[i], x) に更新
+# query_sum / query_min / query_max(l, r): [l, r) の和 / 最小値 / 最大値
+# get(i) / set(i, x): 1点取得 / 代入。ともに O(log n)。
+# 区間加算・各集約は O(log n)。chmin/chmax は償却解析が必要で、1操作 O(log n) の保証はない。（定数倍もやばい）
+# 0 <= l <= r <= n。空区間の更新は何もしない。和は0、最小値は INF、最大値は -INF。
+
+# 使用例:
+# seg = SegmentTreeBeats([1, 5, 3])
+# seg.update_chmin(0, 2, 2)  # [1, 2, 3]
+# seg.update_add(1, 3, 4)    # [1, 6, 7]
+# print(seg.query_sum(0, 3)) # 14
+# print(seg.query_min(1, 3)) # 6
+
+# 区間加算/chmin/chmax・区間和クエリ N, Q <= 2e5
+# https://judge.yosupo.jp/submission/406684 / PyPy3 / 5490 ms
+
+
 class SegmentTreeBeats:
-
-    """
-    SegmentTreeBeats
-    Initialization: SegmentTreeBeats(a)
-    Range Update:
-        update_add(l, r, x): a[i] += x for i in [l, r)
-        update_chmin(l, r, x): a[i] = min(a[i], x) for i in [l, r)
-        update_chmax(l, r, x): a[i] = max(a[i], x) for i in [l, r)
-    Range Query:
-        query_sum(l, r): sum(a[i] for i in [l, r))
-        query_min(l, r): min(a[i] for i in [l, r))
-        query_max(l, r): max(a[i] for i in [l, r))
-    """
-
     __slots__ = ["n0", "n", "h", "len", "sum", "max_v", "smax_v", "max_c", "min_v", "smin_v", "min_c", "add"]
 
     INF = 10**30
@@ -20,8 +27,8 @@ class SegmentTreeBeats:
     def __init__(self, a):
         n = len(a)
         self.n0 = n
-        self.n = 1 << (n - 1).bit_length()
-        self.h = n.bit_length() - 1
+        self.n = 1 << (max(1, n) - 1).bit_length()
+        self.h = self.n.bit_length() - 1
         size = 2 * self.n
         self.len = [0] * size
         self.sum = [0] * size
@@ -41,12 +48,12 @@ class SegmentTreeBeats:
             self.max_c[k] = 1
             self.min_c[k] = 1
         for k in range(self.n - 1, 0, -1):
+            self.len[k] = self.len[k << 1] + self.len[k << 1 | 1]
             self._pull(k)
 
     def _pull(self, k):
         l = k << 1
         r = l | 1
-        self.len[k] = self.len[l] + self.len[r]
         self.sum[k] = self.sum[l] + self.sum[r]
         if self.max_v[l] > self.max_v[r]:
             self.max_v[k] = self.max_v[l]
@@ -129,200 +136,190 @@ class SegmentTreeBeats:
             self._apply_chmax(r, pv_min)
 
     def _push_to(self, k):
-        for s in range(self.h, 0, -1):
-            self._push(k >> s)
+        for shift in range(self.h, 0, -1):
+            self._push(k >> shift)
 
     def _rebuild_from(self, k):
         while k > 1:
             k >>= 1
             self._pull(k)
 
+    def _prepare(self, l, r):
+        l += self.n
+        r += self.n
+        ll = l // (l & -l)
+        rr = r // (r & -r) - 1
+        push = self._push
+        for shift in range(ll.bit_length() - 1, 0, -1):
+            push(ll >> shift)
+        for shift in range(rr.bit_length() - 1, 0, -1):
+            push(rr >> shift)
+        return l, r, ll, rr
+
     def update_add(self, l, r, x):
-        if l >= r:
+        assert 0 <= l <= r <= self.n0
+        if l == r or x == 0:
             return
-        assert 0 <= l < r <= self.n0
-        stack = [(1, 0, self.n, 0)]
-        while stack:
-            k, nl, nr, st = stack.pop()
-            if st == 1:
-                self._pull(k)
-                continue
-            if r <= nl or nr <= l or self.len[k] == 0:
-                continue
-            if l <= nl and nr <= r:
-                self._apply_add(k, x)
-                continue
-            self._push(k)
-            stack.append((k, nl, nr, 1))
-            m = (nl + nr) >> 1
-            stack.append(((k << 1) | 1, m, nr, 0))
-            stack.append((k << 1, nl, m, 0))
+        l, r, ll, rr = self._prepare(l, r)
+        apply = self._apply_add
+        while l < r:
+            if l & 1:
+                apply(l, x)
+                l += 1
+            if r & 1:
+                r -= 1
+                apply(r, x)
+            l >>= 1
+            r >>= 1
+        self._rebuild_from(ll)
+        self._rebuild_from(rr)
 
     def update_chmin(self, l, r, x):
-        if l >= r:
+        assert 0 <= l <= r <= self.n0
+        if l == r:
             return
-        assert 0 <= l < r <= self.n0
-        stack = [(1, 0, self.n, 0)]
+        l, r, ll, rr = self._prepare(l, r)
+        stack = []
+        while l < r:
+            if l & 1:
+                stack.append(l)
+                l += 1
+            if r & 1:
+                r -= 1
+                stack.append(r)
+            l >>= 1
+            r >>= 1
+        max_v, smax_v = self.max_v, self.smax_v
+        apply, push, pull = self._apply_chmin, self._push, self._pull
         while stack:
-            k, nl, nr, st = stack.pop()
-            if st == 1:
-                self._pull(k)
+            k = stack.pop()
+            if k < 0:
+                pull(~k)
+            elif max_v[k] <= x:
                 continue
-            if r <= nl or nr <= l or self.len[k] == 0 or self.max_v[k] <= x:
-                continue
-            if l <= nl and nr <= r and self.smax_v[k] < x:
-                self._apply_chmin(k, x)
-                continue
-            self._push(k)
-            stack.append((k, nl, nr, 1))
-            m = (nl + nr) >> 1
-            stack.append(((k << 1) | 1, m, nr, 0))
-            stack.append((k << 1, nl, m, 0))
+            elif smax_v[k] < x:
+                apply(k, x)
+            else:
+                push(k)
+                stack.append(~k)  # 子の処理後に再集計する印
+                left = k << 1
+                right = left | 1
+                if max_v[right] > x:
+                    stack.append(right)
+                if max_v[left] > x:
+                    stack.append(left)
+        self._rebuild_from(ll)
+        self._rebuild_from(rr)
 
     def update_chmax(self, l, r, x):
-        if l >= r:
+        assert 0 <= l <= r <= self.n0
+        if l == r:
             return
-        assert 0 <= l < r <= self.n0
-        stack = [(1, 0, self.n, 0)]
+        l, r, ll, rr = self._prepare(l, r)
+        stack = []
+        while l < r:
+            if l & 1:
+                stack.append(l)
+                l += 1
+            if r & 1:
+                r -= 1
+                stack.append(r)
+            l >>= 1
+            r >>= 1
+        min_v, smin_v = self.min_v, self.smin_v
+        apply, push, pull = self._apply_chmax, self._push, self._pull
         while stack:
-            k, nl, nr, st = stack.pop()
-            if st == 1:
-                self._pull(k)
+            k = stack.pop()
+            if k < 0:
+                pull(~k)
+            elif min_v[k] >= x:
                 continue
-            if r <= nl or nr <= l or self.len[k] == 0 or self.min_v[k] >= x:
-                continue
-            if l <= nl and nr <= r and self.smin_v[k] > x:
-                self._apply_chmax(k, x)
-                continue
-            self._push(k)
-            stack.append((k, nl, nr, 1))
-            m = (nl + nr) >> 1
-            stack.append(((k << 1) | 1, m, nr, 0))
-            stack.append((k << 1, nl, m, 0))
+            elif smin_v[k] > x:
+                apply(k, x)
+            else:
+                push(k)
+                stack.append(~k)
+                left = k << 1
+                right = left | 1
+                if min_v[right] < x:
+                    stack.append(right)
+                if min_v[left] < x:
+                    stack.append(left)
+        self._rebuild_from(ll)
+        self._rebuild_from(rr)
 
     def query_sum(self, l, r):
-        if l >= r:
+        assert 0 <= l <= r <= self.n0
+        if l == r:
             return 0
-        assert 0 <= l < r <= self.n0
+        l, r, _, _ = self._prepare(l, r)
+        values = self.sum
         res = 0
-        stack = [(1, 0, self.n)]
-        while stack:
-            k, nl, nr = stack.pop()
-            if r <= nl or nr <= l or self.len[k] == 0:
-                continue
-            if l <= nl and nr <= r:
-                res += self.sum[k]
-                continue
-            self._push(k)
-            m = (nl + nr) >> 1
-            stack.append(((k << 1) | 1, m, nr))
-            stack.append((k << 1, nl, m))
+        while l < r:
+            if l & 1:
+                res += values[l]
+                l += 1
+            if r & 1:
+                r -= 1
+                res += values[r]
+            l >>= 1
+            r >>= 1
         return res
 
     def query_min(self, l, r):
-        if l >= r:
+        assert 0 <= l <= r <= self.n0
+        if l == r:
             return self.INF
-        assert 0 <= l < r <= self.n0
+        l, r, _, _ = self._prepare(l, r)
+        values = self.min_v
         res = self.INF
-        stack = [(1, 0, self.n)]
-        while stack:
-            k, nl, nr = stack.pop()
-            if r <= nl or nr <= l or self.len[k] == 0:
-                continue
-            if l <= nl and nr <= r:
-                v = self.min_v[k]
-                if v < res:
-                    res = v
-                continue
-            self._push(k)
-            m = (nl + nr) >> 1
-            stack.append(((k << 1) | 1, m, nr))
-            stack.append((k << 1, nl, m))
+        while l < r:
+            if l & 1:
+                if values[l] < res:
+                    res = values[l]
+                l += 1
+            if r & 1:
+                r -= 1
+                if values[r] < res:
+                    res = values[r]
+            l >>= 1
+            r >>= 1
         return res
 
     def query_max(self, l, r):
-        if l >= r:
+        assert 0 <= l <= r <= self.n0
+        if l == r:
             return -self.INF
-        assert 0 <= l < r <= self.n0
+        l, r, _, _ = self._prepare(l, r)
+        values = self.max_v
         res = -self.INF
-        stack = [(1, 0, self.n)]
-        while stack:
-            k, nl, nr = stack.pop()
-            if r <= nl or nr <= l or self.len[k] == 0:
-                continue
-            if l <= nl and nr <= r:
-                v = self.max_v[k]
-                if v > res:
-                    res = v
-                continue
-            self._push(k)
-            m = (nl + nr) >> 1
-            stack.append(((k << 1) | 1, m, nr))
-            stack.append((k << 1, nl, m))
+        while l < r:
+            if l & 1:
+                if values[l] > res:
+                    res = values[l]
+                l += 1
+            if r & 1:
+                r -= 1
+                if values[r] > res:
+                    res = values[r]
+            l >>= 1
+            r >>= 1
         return res
 
     def get(self, i):
         assert 0 <= i < self.n0
-        k = 1
-        nl = 0
-        nr = self.n
-        while nr - nl > 1:
-            self._push(k)
-            m = (nl + nr) >> 1
-            if i < m:
-                k = k << 1
-                nr = m
-            else:
-                k = (k << 1) | 1
-                nl = m
+        k = i + self.n
+        self._push_to(k)
         return self.sum[k]
 
-    def set(self, i, v):
+    def set(self, i, x):
         assert 0 <= i < self.n0
-        path = []
-        k = 1
-        nl = 0
-        nr = self.n
-        while nr - nl > 1:
-            path.append(k)
-            self._push(k)
-            m = (nl + nr) >> 1
-            if i < m:
-                k = k << 1
-                nr = m
-            else:
-                k = (k << 1) | 1
-                nl = m
-        self.len[k] = 1
-        self.sum[k] = v
-        self.max_v[k] = v
-        self.min_v[k] = v
+        k = i + self.n
+        self._push_to(k)
+        self.sum[k] = x
+        self.max_v[k] = self.min_v[k] = x
         self.smax_v[k] = -self.INF
         self.smin_v[k] = self.INF
-        self.max_c[k] = 1
-        self.min_c[k] = 1
+        self.max_c[k] = self.min_c[k] = 1
         self.add[k] = 0
-        for k in reversed(path):
-            self._pull(k)
-
-# https://judge.yosupo.jp/problem/range_chmin_chmax_add_range_sum
-# Range Chmin Chmax Add Range Sum
-
-import sys
-input = sys.stdin.buffer.readline
-
-n, q = map(int, input().split())
-seg = SegmentTreeBeats(list(map(int, input().split())))
-
-f = (seg.update_chmin, seg.update_chmax, seg.update_add)
-ans = []
-for _ in range(q):
-    q = tuple(map(int, input().split()))
-    if q[0] == 3:
-        _, l, r = q
-        ans.append(seg.query_sum(l, r))
-    else:
-        qt, l, r, b = q
-        f[qt](l, r, b)
-
-sys.stdout.write("\n".join(map(str, ans)) + "\n")
+        self._rebuild_from(k)
