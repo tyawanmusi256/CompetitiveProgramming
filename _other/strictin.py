@@ -2,16 +2,24 @@
 厳密入力パーサー
 競技プログラミングの入力を想定
 
+- StrictIn(data) / StrictIn.from_stdin_ascii():
+    入力全体が ASCII の表示文字・SPACE・TAB・CR・LF のみか検査
+    入力形式・制約の違反は InputError で通知
 - read_space():
     1文字以上の SPACE/TAB を要求して消費
 - read_eoln():
-    行末改行を要求して消費
+    行末改行（LF または CRLF）を要求して消費。単独の CR は不可
 - read_eof():
     EOF を要求
 - read_int(lo=None, hi=None):
-    1トークンを10進整数として読む（負数可/範囲チェック有）
+    1トークンを10進整数として読む（lo <= x <= hi）
+    負数・先頭ゼロ・-0 を許可し、+ 符号は不可
+    実行環境の整数変換の桁数制限を超えた場合も InputError
 - read_string(min_len=None, max_len=None):
     1トークンを文字列として読む（長さチェック有）
+
+文字の種類、配列の相異性など、問題固有の制約は呼び出し側で検査する。
+入力全体を検証する場合は、最後に read_eof() を呼ぶ。
 
 使用例:
 ins = StrictIn.from_stdin_ascii()
@@ -37,15 +45,7 @@ class InputError(Exception):
 class StrictIn:
 
     def __init__(self, s: bytes, i: int = 0, line: int = 1, col: int = 1):
-        self.s = s
-        self.i = i
-        self.line = line
-        self.col = col
-
-    @staticmethod
-    def from_stdin_ascii() -> "StrictIn":
-        raw = sys.stdin.buffer.read()
-        for p, b in enumerate(raw):
+        for p, b in enumerate(s):
             if b >= 0x80:
                 raise InputError(f"non-ASCII byte at offset {p}: 0x{b:02x}")
             if b in (0x09, 0x0A, 0x0D):
@@ -53,7 +53,14 @@ class StrictIn:
             if 0x20 <= b <= 0x7E:
                 continue
             raise InputError(f"disallowed control byte at offset {p}: 0x{b:02x}")
-        return StrictIn(raw)
+        self.s = s
+        self.i = i
+        self.line = line
+        self.col = col
+
+    @staticmethod
+    def from_stdin_ascii() -> "StrictIn":
+        return StrictIn(sys.stdin.buffer.read())
 
     def _eof(self) -> bool:
         return self.i >= len(self.s)
@@ -86,8 +93,6 @@ class StrictIn:
             if self._peek() != 0x0A:
                 self._err("bare CR is not allowed (use LF or CRLF)")
             self._advance()
-            self.line += 1
-            self.col = 1
             return
         self._err("expected EOL")
 
@@ -150,7 +155,10 @@ class StrictIn:
         if len(body) == 0 or (not all(48 <= c <= 57 for c in body)):
             self._err(f"int is not a base-10 integer")
 
-        x = int(t_str)
+        try:
+            x = int(t_str)
+        except ValueError:
+            self._err("int exceeds the integer conversion limit")
         if lo is not None and x < lo:
             self._err(f"int out of range: {x} < {lo}")
         if hi is not None and x > hi:
